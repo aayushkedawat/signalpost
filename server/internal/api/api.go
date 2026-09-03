@@ -95,6 +95,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	case out.Ignored:
 		s.log.Debug("session_ended for untracked session; ignored",
 			"tool", out.Tool, "session", out.SessionID)
+	default:
+		// Ordinary accepted transitions are logged only at Debug, so the
+		// default remains a quiet server. Enable with -log-events to watch
+		// a live agent session drive the state machine — the one thing
+		// unit tests and replayed fixtures cannot show you.
+		s.log.Debug("event applied",
+			"tool", out.Tool, "session", out.SessionID,
+			"event", ev.Event, "from", out.From, "to", out.To)
 	}
 
 	// The body is deliberately empty: hooks are fail-open and ignore the

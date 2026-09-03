@@ -42,7 +42,7 @@ func main() {
 		"multiple of a session's own median event interval before silence counts as stale")
 	flag.DurationVar(&cfg.Sessions.StaleFloor, "stale-floor", cfg.Sessions.StaleFloor,
 		"minimum silence before any session may be marked UNKNOWN, however chatty it was")
-	verbose := flag.Bool("verbose", false, "log accepted-but-notable events at debug level")
+	verbose := flag.Bool("verbose", false, "log every applied transition, not just notable ones — use this to watch a live agent session")
 	flag.Parse()
 
 	level := slog.LevelInfo

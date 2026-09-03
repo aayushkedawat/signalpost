@@ -187,7 +187,7 @@ no adapter-side memory — which is what lets adapters run hook-side.
 |---|---|
 | SessionStart | session_started |
 | UserPromptSubmit | task_started |
-| PermissionRequest | permission_requested |
+| PermissionRequest | permission_requested | ⚠ see below |
 | PostToolUse | permission_granted |
 | PostToolUseFailure | task_failed |
 | Stop | task_completed |
@@ -227,6 +227,38 @@ and `hook_event_name`. `SessionStart` carries `source` (observed:
 `startup`, `resume`), `SessionEnd` carries `reason`, and the in-turn
 hooks carry `prompt_id`, which identifies a single turn and may be a
 better basis for task identity than inference if that is ever needed.
+
+> **⚠ Known defect (found by running against a live session).**
+> `PermissionRequest` fires whenever the permission system is *consulted*,
+> not only when a human is actually prompted. In a session with auto
+> approval — or in `default` mode for any tool covered by an allow rule —
+> it fires on every tool call, so the light enters WAITING for the full
+> duration of ordinary work and inverts the two states that matter most:
+> red means "needs you", and here it means "busy".
+>
+> Observed live as a clean oscillation with no human ever prompted:
+>
+> ```
+> permission_granted   -> executing      PostToolUse       (call N)
+> permission_requested -> waiting        PermissionRequest (call N+1)
+> permission_granted   -> executing      PostToolUse       (call N+1)
+> permission_requested -> waiting        PermissionRequest (call N+2)
+> ```
+>
+> The captures that validated this row were misleading: every
+> `PermissionRequest` in them coincided with a real `Write` prompt that
+> was actually answered, which is a sampling artifact of testing in
+> `default` mode with a tool that always prompts.
+>
+> A fix needs a field in the payload that separates "a human is being
+> asked" from "auto-approved". `permission_mode` is the obvious
+> candidate but is not sufficient on its own, since an allow rule
+> auto-approves inside `default` mode too. Use
+> `tools/hook-settings.debug.json` to capture payloads from both cases.
+>
+> Until then, note that PRD §7 prefers false negatives to false
+> positives: dropping this row entirely (no WAITING at all) is closer to
+> the product's intent than a red light that does not mean what it says.
 
 Still unobserved, and therefore still unmapped: `StopFailure`,
 `PermissionDenied`, `SubagentStart`/`SubagentStop`, and a permission
