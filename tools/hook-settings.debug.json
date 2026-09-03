@@ -1,18 +1,13 @@
 {
   "_comment": [
-    "Runs the traffic light AND payload capture at the same time.",
+    "Traffic light AND raw payload capture, side by side.",
     "",
     "Install: cp tools/hook-settings.debug.json .claude/settings.json",
     "         then restart Claude Code.",
     "",
-    "Why: PermissionRequest fires on every permission *evaluation*, not",
-    "only when a human is prompted, so mapping it to WAITING turns the",
-    "light red during ordinary tool calls. We need payloads from both an",
-    "auto-approved call and a real human prompt to find a field that",
-    "tells them apart.",
-    "",
-    "Capture writes to capture/raw.jsonl (gitignored). Revert to",
-    "tools/hook-settings.example.json when done."
+    "Capture writes to capture/raw.jsonl (gitignored: real prompts and code).",
+    "Analyze with: python3 tools/capture/summarize.py",
+    "Revert to tools/hook-settings.example.json when done."
   ],
   "hooks": {
     "SessionStart": [
@@ -63,7 +58,7 @@
         ]
       }
     ],
-    "PermissionRequest": [
+    "Notification": [
       {
         "hooks": [
           {
@@ -71,7 +66,7 @@
             "command": "/Users/aayushkedawat/bin/traffic-light-hook",
             "args": [
               "-hook",
-              "PermissionRequest"
+              "Notification"
             ],
             "async": true,
             "timeout": 5
@@ -80,7 +75,7 @@
             "type": "command",
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
-              "PermissionRequest"
+              "Notification"
             ],
             "timeout": 5
           }
@@ -197,6 +192,20 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PermissionRequest"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PermissionDenied": [
       {
         "hooks": [
@@ -211,20 +220,6 @@
         ]
       }
     ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
-            "args": [
-              "Notification"
-            ],
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "StopFailure": [
       {
         "hooks": [
@@ -233,6 +228,34 @@
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
               "StopFailure"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "SubagentStart"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "SubagentStop"
             ],
             "timeout": 5
           }

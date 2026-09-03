@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Notification",
+  "notification_type": "permission_prompt",
+  "session_id": "00000000-0000-0000-0000-00000000cafe"
+}

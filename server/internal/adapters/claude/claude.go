@@ -35,20 +35,47 @@ const Source = "claude"
 type payload struct {
 	HookEventName string `json:"hook_event_name"`
 	SessionID     string `json:"session_id"`
+	// NotificationType discriminates the two kinds of Notification.
+	// A Claude Code enum, not user content: "permission_prompt" means a
+	// human is being asked to approve something, "idle_prompt" means the
+	// turn ended and Claude is waiting for the next instruction.
+	NotificationType string `json:"notification_type"`
 }
 
+// notificationNeedsAttention is the notification_type that means a human
+// is actually being asked for something. "idle_prompt" is deliberately
+// excluded: it fires after a turn ends, which Stop has already reported
+// as DONE, and treating it as WAITING would turn every completed turn
+// red instead of green.
+const notificationNeedsAttention = "permission_prompt"
+
 // mapping is the validated hook → normalized event table (protocol.md §8).
+// Notification is handled separately in Normalize because it is the one
+// hook whose meaning depends on a field inside the payload.
 //
-// PreToolUse is deliberately absent rather than missing by oversight:
-// UserPromptSubmit already establishes EXECUTING at the start of the turn,
-// earlier than the first tool call, so PreToolUse carries no state. Were
-// both mapped to task_started they would arrive back to back and put every
-// tool call into UNKNOWN, since EXECUTING+task_started is not a listed
-// transition.
+// Two hooks are deliberately absent rather than missing by oversight:
+//
+// PreToolUse — UserPromptSubmit already establishes EXECUTING at the start
+// of the turn, earlier than the first tool call, so PreToolUse carries no
+// state. Were both mapped to task_started they would arrive back to back
+// and put every tool call into UNKNOWN, since EXECUTING+task_started is
+// not a listed transition.
+//
+// PermissionRequest — it fires when the permission system is *consulted*,
+// which is not the same as a human being asked. It was mapped to
+// permission_requested until a live session showed the light turning red
+// while an auto-approving classifier, not a person, made the decision.
+// Nothing in its payload distinguishes the two cases, because at the
+// moment it fires Claude Code has not decided yet. Notification with
+// notification_type "permission_prompt" is the signal that a human is
+// genuinely being asked, and it carries that fact explicitly.
+//
+// SubagentStop — a subagent finishing does not mean the session's task is
+// finished; mapping it to task_completed would report DONE while the main
+// agent is still working.
 var mapping = map[string]types.NormalizedEventType{
 	"SessionStart":       types.EventSessionStarted,
 	"UserPromptSubmit":   types.EventTaskStarted,
-	"PermissionRequest":  types.EventPermissionRequested,
 	"PostToolUse":        types.EventPermissionGranted,
 	"PostToolUseFailure": types.EventTaskFailed,
 	"Stop":               types.EventTaskCompleted,
@@ -74,7 +101,7 @@ func Normalize(raw []byte) (types.NormalizedEvent, bool, error) {
 		return types.NormalizedEvent{}, false, fmt.Errorf("hook payload has no hook_event_name")
 	}
 
-	event, ok := mapping[p.HookEventName]
+	event, ok := resolve(p)
 	if !ok {
 		// Not an error: an unmapped hook is simply not interesting.
 		return types.NormalizedEvent{}, false, nil
@@ -100,6 +127,19 @@ func Normalize(raw []byte) (types.NormalizedEvent, bool, error) {
 		Event:     event,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}, true, nil
+}
+
+// resolve picks the normalized event for a payload, including the one
+// case that depends on payload contents rather than the hook name alone.
+func resolve(p payload) (types.NormalizedEventType, bool) {
+	if p.HookEventName == "Notification" {
+		if p.NotificationType == notificationNeedsAttention {
+			return types.EventPermissionRequested, true
+		}
+		return "", false
+	}
+	event, ok := mapping[p.HookEventName]
+	return event, ok
 }
 
 // newEventID returns a random dedup identity.

@@ -187,7 +187,7 @@ no adapter-side memory — which is what lets adapters run hook-side.
 |---|---|
 | SessionStart | session_started |
 | UserPromptSubmit | task_started |
-| PermissionRequest | permission_requested | ⚠ see below |
+| Notification (`notification_type: permission_prompt`) | permission_requested |
 | PostToolUse | permission_granted |
 | PostToolUseFailure | task_failed |
 | Stop | task_completed |
@@ -228,43 +228,51 @@ and `hook_event_name`. `SessionStart` carries `source` (observed:
 hooks carry `prompt_id`, which identifies a single turn and may be a
 better basis for task identity than inference if that is ever needed.
 
-> **⚠ Known defect (found by running against a live session).**
-> `PermissionRequest` fires whenever the permission system is *consulted*,
-> not only when a human is actually prompted. In a session with auto
-> approval — or in `default` mode for any tool covered by an allow rule —
-> it fires on every tool call, so the light enters WAITING for the full
-> duration of ordinary work and inverts the two states that matter most:
-> red means "needs you", and here it means "busy".
+> **Corrected after running against a live session.** This row is the
+> one the captures got wrong twice, in opposite directions.
 >
-> Observed live as a clean oscillation with no human ever prompted:
+> The original draft mapped `Notification` → `permission_requested`. An
+> early capture window contained no `Notification` at all, so it was
+> recorded here as "never fires" and replaced with `PermissionRequest`.
+> That was absence of evidence: `Notification` fires only once a prompt
+> has gone unanswered for a few seconds, which no short capture had hit.
 >
-> ```
-> permission_granted   -> executing      PostToolUse       (call N)
-> permission_requested -> waiting        PermissionRequest (call N+1)
-> permission_granted   -> executing      PostToolUse       (call N+1)
-> permission_requested -> waiting        PermissionRequest (call N+2)
-> ```
+> `PermissionRequest` then turned out to be the wrong signal. It fires
+> when the permission system is *consulted* — 7 times in 59 tool calls in
+> the captures — and is resolved by an auto-approving classifier as often
+> as by a person. Nothing in its payload separates the two, because at
+> the moment it fires Claude Code has not decided yet. Mapping it to
+> WAITING put the light in "needs you" while an agent worked unattended.
 >
-> The captures that validated this row were misleading: every
-> `PermissionRequest` in them coincided with a real `Write` prompt that
-> was actually answered, which is a sampling artifact of testing in
-> `default` mode with a tool that always prompts.
+> `Notification` carries `notification_type`, which states the case
+> outright:
 >
-> A fix needs a field in the payload that separates "a human is being
-> asked" from "auto-approved". `permission_mode` is the obvious
-> candidate but is not sufficient on its own, since an allow rule
-> auto-approves inside `default` mode too. Use
-> `tools/hook-settings.debug.json` to capture payloads from both cases.
+> | `notification_type` | meaning | mapped |
+> |---|---|---|
+> | `permission_prompt` | "Claude needs your permission to use Bash" | ✅ permission_requested |
+> | `idle_prompt` | "Claude is waiting for your input" | ❌ ignored |
 >
-> Until then, note that PRD §7 prefers false negatives to false
-> positives: dropping this row entirely (no WAITING at all) is closer to
-> the product's intent than a red light that does not mean what it says.
+> `idle_prompt` is excluded deliberately: it fires after a turn ends,
+> which `Stop` has already reported as DONE, so mapping it would turn
+> every completed turn red instead of green.
+>
+> The cost is a false negative: a prompt answered before the
+> notification threshold produces no WAITING at all. PRD §7 prefers that
+> to a red that does not mean "needs you".
+>
+> `SubagentStop` is also left unmapped — a subagent finishing says
+> nothing about the main agent, which is usually still working.
 
-Still unobserved, and therefore still unmapped: `StopFailure`,
-`PermissionDenied`, `SubagentStart`/`SubagentStop`, and a permission
-denial issued *without* a typed reason — the last of these matters
-because it is unknown whether anything at all is emitted to clear
-WAITING in that case.
+A bare permission denial — tapping "No" without typing a reason — emits
+nothing at all: no `PermissionDenied`, no `PostToolUse`, no `Stop`. The
+session therefore stays WAITING until the next `UserPromptSubmit`, which
+is defensible, since after a rejection the agent genuinely is awaiting
+direction. Note that §9 aggregation lets one such session pin the global
+light red and mask every other tool until that session is touched or
+quit.
+
+Still unobserved: `StopFailure` and `PermissionDenied`. The latter is
+suspected to cover rule-based denials rather than user rejections.
 
 ### Copilot CLI hook mapping
 

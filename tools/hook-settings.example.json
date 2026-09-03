@@ -6,18 +6,17 @@
     "  then restart Claude Code (the settings watcher only watches",
     "  directories that already had a settings file at startup).",
     "",
-    "Build the binary first:",
+    "Build first:",
     "  go build -o ~/bin/traffic-light-hook ./server/cmd/traffic-light-hook",
-    "and replace the command paths below with wherever you put it.",
+    "and replace the command paths below if you put it elsewhere.",
     "",
-    "Only the seven hooks that map to a normalized event are listed;",
-    "PreToolUse is deliberately absent (see docs/protocol.md section 8).",
+    "WAITING comes from Notification (notification_type permission_prompt),",
+    "not PermissionRequest: the latter fires whenever the permission system",
+    "is consulted, including when a classifier auto-approves with no human",
+    "involved, which turns the light red during ordinary work. See",
+    "docs/protocol.md section 8.",
     "",
-    "async:true means Claude Code does not wait for the hook at all.",
-    "The binary is already fail-open (bounded timeout, always exits 0,",
-    "never writes to stdout), so this is belt and braces -- but the",
-    "whole point is that the light can never be the reason an agent",
-    "stalls."
+    "PreToolUse, PermissionRequest and SubagentStop are deliberately absent."
   ],
   "hooks": {
     "SessionStart": [
@@ -52,7 +51,7 @@
         ]
       }
     ],
-    "PermissionRequest": [
+    "Notification": [
       {
         "hooks": [
           {
@@ -60,7 +59,7 @@
             "command": "/Users/aayushkedawat/bin/traffic-light-hook",
             "args": [
               "-hook",
-              "PermissionRequest"
+              "Notification"
             ],
             "async": true,
             "timeout": 5

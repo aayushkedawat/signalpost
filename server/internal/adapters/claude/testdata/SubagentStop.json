@@ -1,0 +1,7 @@
+{
+  "agent_type": "",
+  "hook_event_name": "SubagentStop",
+  "permission_mode": "default",
+  "session_id": "00000000-0000-0000-0000-00000000cafe",
+  "stop_hook_active": false
+}

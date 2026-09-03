@@ -30,13 +30,13 @@ func loadFixture(t *testing.T, hook string) []byte {
 // TestRealPayloadsMapCorrectly is the test this package exists for.
 func TestRealPayloadsMapCorrectly(t *testing.T) {
 	want := map[string]types.NormalizedEventType{
-		"SessionStart":       types.EventSessionStarted,
-		"UserPromptSubmit":   types.EventTaskStarted,
-		"PermissionRequest":  types.EventPermissionRequested,
-		"PostToolUse":        types.EventPermissionGranted,
-		"PostToolUseFailure": types.EventTaskFailed,
-		"Stop":               types.EventTaskCompleted,
-		"SessionEnd":         types.EventSessionEnded,
+		"SessionStart":                   types.EventSessionStarted,
+		"UserPromptSubmit":               types.EventTaskStarted,
+		"Notification-permission_prompt": types.EventPermissionRequested,
+		"PostToolUse":                    types.EventPermissionGranted,
+		"PostToolUseFailure":             types.EventTaskFailed,
+		"Stop":                           types.EventTaskCompleted,
+		"SessionEnd":                     types.EventSessionEnded,
 	}
 
 	for hook, wantEvent := range want {
@@ -62,6 +62,64 @@ func TestRealPayloadsMapCorrectly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOnlyRealPromptsCauseWaiting is the regression test for the defect a
+// live session exposed. WAITING is the state the whole product exists to
+// report, and a red light that does not mean "a person is needed" is the
+// single worst thing this system can do.
+//
+// PermissionRequest fires whenever the permission system is consulted —
+// 7 times out of 59 tool calls in the captures — and is resolved by an
+// auto-approving classifier as often as by a human. Notification carries
+// notification_type, which says outright which case it is.
+func TestOnlyRealPromptsCauseWaiting(t *testing.T) {
+	t.Run("permission_prompt means a human is being asked", func(t *testing.T) {
+		ev, ok, err := Normalize(loadFixture(t, "Notification-permission_prompt"))
+		if err != nil || !ok {
+			t.Fatalf("Normalize failed: ok=%v err=%v", ok, err)
+		}
+		if ev.Event != types.EventPermissionRequested {
+			t.Errorf("got %s, want permission_requested", ev.Event)
+		}
+	})
+
+	t.Run("idle_prompt must not turn the light red", func(t *testing.T) {
+		// Fires after a turn ends, which Stop already reported as DONE.
+		// Mapping it to WAITING would make every finished turn go red
+		// instead of green.
+		ev, ok, err := Normalize(loadFixture(t, "Notification-idle_prompt"))
+		if err != nil {
+			t.Fatalf("should be ignored, not an error: %v", err)
+		}
+		if ok {
+			t.Errorf("idle_prompt mapped to %s; every completed turn would go red", ev.Event)
+		}
+	})
+
+	t.Run("PermissionRequest must not turn the light red", func(t *testing.T) {
+		ev, ok, err := Normalize(loadFixture(t, "PermissionRequest"))
+		if err != nil {
+			t.Fatalf("should be ignored, not an error: %v", err)
+		}
+		if ok {
+			t.Errorf("PermissionRequest mapped to %s; the light would go red "+
+				"whenever a classifier, not a person, decides", ev.Event)
+		}
+	})
+
+	t.Run("SubagentStop must not report the task finished", func(t *testing.T) {
+		// A subagent finishing says nothing about the main agent, which
+		// is usually still working.
+		ev, ok, err := Normalize(loadFixture(t, "SubagentStop"))
+		if err != nil {
+			t.Fatalf("should be ignored, not an error: %v", err)
+		}
+		if ok {
+			t.Errorf("SubagentStop mapped to %s; DONE would show while the "+
+				"main agent is still running", ev.Event)
+		}
+	})
 }
 
 // TestPreToolUseIsIgnored guards the decision that keeps every ordinary
@@ -131,7 +189,7 @@ func TestEnvelopeCarriesNothingElse(t *testing.T) {
 func TestUnmappedHookIsIgnoredNotAnError(t *testing.T) {
 	// Hooks Claude Code has that we deliberately do not map, plus one
 	// that does not exist, to cover future additions.
-	for _, hook := range []string{"PreCompact", "PostCompact", "SubagentStart", "SomeFutureHook"} {
+	for _, hook := range []string{"PreCompact", "PostCompact", "SubagentStart", "PermissionDenied", "SomeFutureHook"} {
 		raw := []byte(`{"hook_event_name":"` + hook + `","session_id":"s-1"}`)
 		_, ok, err := Normalize(raw)
 		if err != nil {
@@ -197,7 +255,11 @@ func TestEventIDsAreUnique(t *testing.T) {
 // Asserting against events.Validate rather than a reimplementation of it
 // is the point: a copy of the rules here could drift from the real ones.
 func TestOutputPassesTheRealServerValidator(t *testing.T) {
+	fixtures := []string{"Notification-permission_prompt"}
 	for hook := range mapping {
+		fixtures = append(fixtures, hook)
+	}
+	for _, hook := range fixtures {
 		t.Run(hook, func(t *testing.T) {
 			ev, ok, err := Normalize(loadFixture(t, hook))
 			if err != nil || !ok {
@@ -214,7 +276,7 @@ func TestOutputPassesTheRealServerValidator(t *testing.T) {
 // path a real POST takes: JSON encode, then the server's own parser,
 // which rejects unknown fields.
 func TestOutputSurvivesTheWire(t *testing.T) {
-	ev, ok, err := Normalize(loadFixture(t, "PermissionRequest"))
+	ev, ok, err := Normalize(loadFixture(t, "Notification-permission_prompt"))
 	if err != nil || !ok {
 		t.Fatalf("Normalize failed: %v", err)
 	}
