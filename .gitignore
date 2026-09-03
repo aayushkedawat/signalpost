@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Go build output
+/bin/
+*.test
+*.out
+
+# Local runtime state — the bearer token is generated per machine and
+# must never be committed (PRD §8).
+token
+*.token
