@@ -52,7 +52,9 @@ internal/api ──▶ internal/sessions.Snapshot ──▶ internal/aggregation
 ```
 
 Supporting: `internal/types` (shared shapes), `internal/config`
-(tunables and defaults), `internal/auth` (token file + bearer middleware).
+(tunables and defaults), `internal/auth` (token file + bearer middleware),
+`internal/adapters/claude` (vendor translation), and `cmd/traffic-light-hook`
+(the binary Claude Code invokes) — see "Adapters and the hook boundary".
 
 ### Why the split is where it is
 
@@ -95,13 +97,49 @@ a hook must never wait on us.
 - **`packages/traffic_light_core/`** does not exist yet. It is only
   needed once there are two Dart clients to share it (phases 4–5).
 
-## Where phase 2 plugs in
+## Adapters and the hook boundary
 
-Adapters are the only place vendor hook names may appear. Nothing in
-`statemachine`, `sessions`, or `aggregation` should learn a vendor name.
+Adapters are the only place vendor hook names appear. Nothing in
+`statemachine`, `sessions`, or `aggregation` knows a vendor name.
 
-Before writing the Claude adapter, settle the boundary question recorded
-in protocol.md §8: today `POST /events` accepts only the normalized
-envelope and rejects everything else, which leaves no route by which a
-raw vendor payload could reach a server-side adapter. Phase 1 never hits
-this because the simulator posts normalized events directly.
+```
+Claude Code
+    │  raw hook payload on stdin (prompts, tool args, file contents)
+    ▼
+cmd/traffic-light-hook          ← runs hook-side, in Claude Code's process
+    │
+    ├── internal/adapters/claude    Normalize(raw) -> (event, ok, error)
+    │                               pure; no state, no clock but the stamp
+    ▼
+    POST /events  { eventId, source, sessionId, event, timestamp }
+                  ← only these five fields ever cross the boundary
+```
+
+**Why the adapter runs hook-side.** protocol.md §8 originally placed
+adapters in the server. That cannot be reconciled with PRD §9, which
+limits what crosses the hook→server boundary to five fields and asks for
+schema-level enforcement: a server-side adapter requires raw payloads —
+carrying prompts, file paths and tool arguments — to be transmitted to
+the server first. Normalizing inside the hook process means the sensitive
+content never leaves the machine's agent process at all, and the strict
+envelope on `POST /events` stays enforced rather than being punched
+through for a vendor endpoint.
+
+The cost is that the hook is a compiled binary rather than a `curl` line.
+That turns out to be an advantage: fail-open can be guaranteed in code
+(bounded timeout, always exit 0, never write to stdout) instead of relying
+on shell correctness in every hook entry.
+
+`cmd/traffic-light-hook` lives in the server module because it shares the
+adapter, and duplicating vendor knowledge into a second module is what §8
+exists to prevent. It is not a "client" in the sense `apps/cli` is: those
+render state and are vendor-agnostic; this produces events and is
+vendor-specific by nature.
+
+**The mapping is validated, not assumed.** Every entry in §8's Claude
+table was checked against payloads captured from real sessions, and most
+of the original guesses were wrong — including the one that made WAITING
+unreachable. Fixtures scrubbed from those captures live in
+`internal/adapters/claude/testdata/`, and the adapter's tests assert its
+output against the server's own `events.Validate`, so the two halves of
+the boundary cannot drift apart.

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "PermissionRequest",
+  "permission_mode": "default",
+  "session_id": "00000000-0000-0000-0000-00000000cafe",
+  "tool_name": "Write"
+}

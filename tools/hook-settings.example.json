@@ -1,0 +1,136 @@
+{
+  "_comment": [
+    "Traffic light hook configuration for Claude Code.",
+    "",
+    "Install:  cp tools/hook-settings.example.json .claude/settings.json",
+    "  then restart Claude Code (the settings watcher only watches",
+    "  directories that already had a settings file at startup).",
+    "",
+    "Build the binary first:",
+    "  go build -o ~/bin/traffic-light-hook ./server/cmd/traffic-light-hook",
+    "and replace the command paths below with wherever you put it.",
+    "",
+    "Only the seven hooks that map to a normalized event are listed;",
+    "PreToolUse is deliberately absent (see docs/protocol.md section 8).",
+    "",
+    "async:true means Claude Code does not wait for the hook at all.",
+    "The binary is already fail-open (bounded timeout, always exits 0,",
+    "never writes to stdout), so this is belt and braces -- but the",
+    "whole point is that the light can never be the reason an agent",
+    "stalls."
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "SessionStart"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "UserPromptSubmit"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "PermissionRequest"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "PostToolUse"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "PostToolUseFailure"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "Stop"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "SessionEnd"
+            ],
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

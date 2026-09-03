@@ -35,17 +35,19 @@ until told to; see build order below.
   tracking, no transcripts, no multi-user, no cloud/remote access. If a
   task seems to need one of these, stop and flag it rather than adding it.
 
-## Build order (current phase: **1**)
+## Build order (current phase: **2**)
 
-1. **Server + state machine + simulator + minimal terminal output** ← we are here
-2. Claude Code hook integration (adapter), tested against real hook payloads
+1. **Server + state machine + simulator + minimal terminal output** (done)
+2. Claude Code hook integration (adapter), tested against real hook
+   payloads ← **we are here** (adapter + hook binary done and validated
+   against captured payloads; remaining: run it against a live session)
 3. Copilot CLI hook integration (adapter)
 4. Desktop app (Flutter, menu bar/tray)
 5. Terminal app polish (Dart CLI)
 6. watchOS app (Swift, Simulator-only initially)
 7. Hardening / hardware (later, separate tracks)
 
-Only do phase 1 right now unless explicitly told otherwise.
+Only do the current phase unless explicitly told otherwise.
 
 ## Phase 1 scope — what "done" looks like
 
@@ -124,6 +126,28 @@ The simulator and CLI speak only HTTP/JSON — they deliberately do not
 import the server's packages, which is the same "clients are dumb and
 vendor-agnostic" boundary the Flutter/Swift clients will sit behind.
 
+Phase 2 adds the Claude Code hook. Adapters run **hook-side**, not in the
+server: PRD §9 limits what crosses the hook→server boundary to five
+fields, and a server-side adapter would require raw payloads (prompts,
+file contents, tool arguments) to be transmitted first. See
+`docs/architecture.md`, "Adapters and the hook boundary".
+
+```bash
+# build the hook and point Claude Code at it
+go build -o ~/bin/traffic-light-hook ./server/cmd/traffic-light-hook
+cp tools/hook-settings.example.json .claude/settings.json   # edit paths first
+# then restart Claude Code — the settings watcher only watches directories
+# that already had a settings file when the session started
+
+# debugging the hook (silent by default: stdout is parsed by Claude Code)
+TRAFFIC_LIGHT_HOOK_DEBUG=1 ~/bin/traffic-light-hook < some-payload.json
+```
+
+`tools/capture/` holds the throwaway instrumentation used to capture real
+payloads, plus `summarize.py` to analyze them. Delete it once the mapping
+is settled. `capture/` is gitignored — payloads contain real prompts and
+code, which PRD §9 keeps out of this repo.
+
 ```bash
 # start the server (generates ~/.traffic-light/token 0600 on first run)
 go run ./server
@@ -148,5 +172,5 @@ Checks, all currently clean:
 
 ```bash
 gofmt -l . && go vet ./server/... ./tools/simulator/... ./apps/cli/...
-go test -race ./server/... ./tools/simulator/... ./apps/cli/...
+go test -race ./server/... ./tools/simulator/... ./apps/cli/...   # 101 funcs / 208 cases
 ```
