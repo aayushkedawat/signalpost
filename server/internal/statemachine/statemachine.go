@@ -21,10 +21,22 @@ var matrix = map[key]types.AgentState{
 	{types.StateExecuting, types.EventTaskCompleted}:       types.StateDone,
 	{types.StateExecuting, types.EventTaskFailed}:          types.StateError,
 	{types.StateWaiting, types.EventPermissionGranted}:     types.StateExecuting,
-	{types.StateWaiting, types.EventInputReceived}:         types.StateExecuting,
-	{types.StateWaiting, types.EventTaskFailed}:            types.StateError,
-	{types.StateError, types.EventTaskStarted}:             types.StateExecuting,
-	{types.StateDone, types.EventTaskStarted}:              types.StateExecuting,
+	// Added in phase 2 from captured Claude Code sequences. PostToolUse
+	// fires after *every* tool call, not only after an approval, so
+	// permission_granted arrives routinely while already EXECUTING;
+	// without this row ordinary tool use would fall off the matrix and
+	// land in UNKNOWN. Idempotent: it confirms EXECUTING, never leaves it.
+	{types.StateExecuting, types.EventPermissionGranted}: types.StateExecuting,
+	// Also phase 2, from a captured denial: rejecting a permission
+	// prompt emits no PermissionDenied hook and no PostToolUse — the
+	// only signal is the user's next prompt, which normalizes to
+	// task_started while the session is still WAITING. Work has resumed,
+	// so this is EXECUTING.
+	{types.StateWaiting, types.EventTaskStarted}:   types.StateExecuting,
+	{types.StateWaiting, types.EventInputReceived}: types.StateExecuting,
+	{types.StateWaiting, types.EventTaskFailed}:    types.StateError,
+	{types.StateError, types.EventTaskStarted}:     types.StateExecuting,
+	{types.StateDone, types.EventTaskStarted}:      types.StateExecuting,
 	// session_started is handled ahead of this table (it applies from any
 	// state), so it deliberately has no rows here.
 }

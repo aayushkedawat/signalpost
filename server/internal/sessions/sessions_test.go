@@ -457,6 +457,93 @@ func TestSessionEndedWhileExecutingRemovesImmediately(t *testing.T) {
 	}
 }
 
+// TestCapturedClaudeSequences replays hook sequences captured from real
+// Claude Code sessions (see tools/capture/), normalized per protocol.md
+// §8. These are the sequences that exposed the two matrix rows added in
+// phase 2; they exist so a future matrix edit cannot silently break the
+// mapping that real sessions actually produce.
+func TestCapturedClaudeSequences(t *testing.T) {
+	cases := []struct {
+		name   string
+		hooks  []string // the real hook names, for legibility
+		events []types.NormalizedEventType
+		want   types.AgentState
+	}{
+		{
+			// The "hi" case: a turn with no tool calls at all. Under the
+			// original §8 mapping (task_started from PreToolUse) nothing
+			// emitted task_started and this landed in UNKNOWN.
+			name:  "prompt with no tool calls",
+			hooks: []string{"SessionStart", "UserPromptSubmit", "Stop"},
+			events: []types.NormalizedEventType{
+				types.EventSessionStarted, types.EventTaskStarted, types.EventTaskCompleted,
+			},
+			want: types.StateDone,
+		},
+		{
+			// Permission approved. PostToolUse fires after every tool
+			// call, so permission_granted arrives while EXECUTING.
+			name:  "permission requested then approved",
+			hooks: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "PostToolUse", "Stop"},
+			events: []types.NormalizedEventType{
+				types.EventSessionStarted, types.EventTaskStarted,
+				types.EventPermissionRequested, types.EventPermissionGranted, types.EventTaskCompleted,
+			},
+			want: types.StateDone,
+		},
+		{
+			// Permission denied with a typed reason: no PostToolUse ever
+			// arrives, and the only signal is the next UserPromptSubmit,
+			// which reaches the session while it is WAITING.
+			name:  "permission requested then denied with a reason",
+			hooks: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "UserPromptSubmit"},
+			events: []types.NormalizedEventType{
+				types.EventSessionStarted, types.EventTaskStarted,
+				types.EventPermissionRequested, types.EventTaskStarted,
+			},
+			want: types.StateExecuting,
+		},
+		{
+			// A tool that fails outright. Verified against a real
+			// PostToolUseFailure payload from a non-zero exit.
+			name:  "tool fails",
+			hooks: []string{"SessionStart", "UserPromptSubmit", "PostToolUseFailure"},
+			events: []types.NormalizedEventType{
+				types.EventSessionStarted, types.EventTaskStarted, types.EventTaskFailed,
+			},
+			want: types.StateError,
+		},
+		{
+			// Ordinary multi-tool work: PostToolUse repeatedly delivers
+			// permission_granted while already EXECUTING.
+			name:  "several tool calls in one turn",
+			hooks: []string{"SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUse", "Stop"},
+			events: []types.NormalizedEventType{
+				types.EventSessionStarted, types.EventTaskStarted,
+				types.EventPermissionGranted, types.EventPermissionGranted,
+				types.EventTaskCompleted,
+			},
+			want: types.StateDone,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if len(tc.hooks) != len(tc.events) {
+				t.Fatalf("test is malformed: %d hooks but %d events", len(tc.hooks), len(tc.events))
+			}
+			m, _ := newTestManager(t)
+			for i, e := range tc.events {
+				out := m.Apply(ev("claude", "s1", e))
+				if out.Unexpected {
+					t.Errorf("hook %s (%s) fell off the matrix, landing in UNKNOWN", tc.hooks[i], e)
+				}
+			}
+			mustState(t, m, "claude", "s1", tc.want)
+		})
+	}
+}
+
 // TestUnknownDoesNotAutoResolve: UNKNOWN persists until a real event.
 func TestUnknownDoesNotAutoResolve(t *testing.T) {
 	m, c := newTestManager(t)
@@ -479,23 +566,45 @@ func TestOutOfOrderEventsDoNotRegressIncorrectly(t *testing.T) {
 	m.Apply(ev("claude", "s1", types.EventPermissionRequested))
 	mustState(t, m, "claude", "s1", types.StateWaiting)
 
-	// A task_started that the hook believes happened well before the
-	// permission prompt, arriving late. WAITING is the most urgent state
-	// and the one the developer needs to see; the pair is unlisted, so it
-	// must land in UNKNOWN rather than silently reverting to EXECUTING
-	// (which would look like "all fine, still working").
+	// A stale timestamp must not change how an event is treated:
+	// protocol.md §5 makes server receivedAt authoritative for ordering
+	// and timestamp informational, so this is applied like any other
+	// task_started and resumes the session (see the note below).
 	stale := ev("claude", "s1", types.EventTaskStarted)
 	stale.Timestamp = "2026-09-03T09:00:00Z"
-	out := m.Apply(stale)
-	if !out.Unexpected {
-		t.Fatal("waiting + task_started should be an unexpected transition")
+	if out := m.Apply(stale); out.Unexpected {
+		t.Fatal("a stale timestamp changed how the event was applied")
 	}
-	got, _ := stateOf(t, m, "claude", "s1")
-	if got == types.StateExecuting {
-		t.Fatal("a late event downgraded WAITING to EXECUTING; attention state lost")
-	}
-	if got != types.StateUnknown {
-		t.Fatalf("got %s, want unknown", got)
+	mustState(t, m, "claude", "s1", types.StateExecuting)
+
+	// NOTE (phase 2): before real hook payloads were captured, this test
+	// asserted the opposite — that WAITING + task_started was unlisted and
+	// therefore landed in UNKNOWN, protecting WAITING from being silently
+	// downgraded by a late event. Captured sequences forced the change:
+	// denying a permission prompt emits no PermissionDenied hook and no
+	// PostToolUse, so the user's next prompt (task_started, arriving while
+	// WAITING) is the only signal that the prompt was answered. Without
+	// this transition a denial would leave the light stuck red forever,
+	// which is the worse failure — a red that outlives its cause is what
+	// teaches a developer to ignore red. The trade is real but narrow:
+	// hooks are delivered in order over loopback HTTP, so a genuinely
+	// out-of-order task_started is unlikely, whereas denials are routine.
+	//
+	// What still holds is the regression this test is named for: the
+	// remaining downgrade paths stay unlisted.
+	for _, e := range []types.NormalizedEventType{
+		types.EventPermissionGranted, types.EventInputReceived,
+	} {
+		m2, _ := newTestManager(t)
+		m2.Apply(ev("claude", "s2", types.EventSessionStarted))
+		m2.Apply(ev("claude", "s2", types.EventTaskStarted))
+		m2.Apply(ev("claude", "s2", types.EventTaskCompleted))
+		mustState(t, m2, "claude", "s2", types.StateDone)
+		// DONE is ephemeral and must not be resurrected into EXECUTING by
+		// a resolution event for a prompt that no longer exists.
+		if out := m2.Apply(ev("claude", "s2", e)); !out.Unexpected {
+			t.Errorf("done + %s should be unlisted, not a silent transition", e)
+		}
 	}
 }
 

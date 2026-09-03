@@ -42,6 +42,8 @@ UNKNOWN    Server no longer trusts its last known state for this session.
 | EXECUTING | task_completed | DONE |
 | EXECUTING | task_failed | ERROR |
 | WAITING | permission_granted / input_received | EXECUTING |
+| WAITING | task_started | EXECUTING |
+| EXECUTING | permission_granted | EXECUTING |
 | WAITING | task_failed | ERROR |
 | ERROR | task_started | EXECUTING |
 | DONE | task_started | EXECUTING |
@@ -54,6 +56,29 @@ UNKNOWN    Server no longer trusts its last known state for this session.
 Any current/event pair not listed above is logged as an unexpected
 transition and the session moves to UNKNOWN rather than silently
 ignored or guessed at.
+
+The two rows marked EXECUTING above were added in phase 2 from captured
+Claude Code sequences, not from reasoning:
+
+- `EXECUTING + permission_granted` — `PostToolUse` fires after *every*
+  tool call, not only after an approval, so `permission_granted` arrives
+  routinely while already EXECUTING. Without this row ordinary tool use
+  falls off the matrix into UNKNOWN. It is idempotent: it confirms
+  EXECUTING and never leaves it.
+- `WAITING + task_started` — denying a permission prompt emits no
+  `PermissionDenied` hook and no `PostToolUse`. The only signal that the
+  prompt was answered is the user's next prompt, which normalizes to
+  `task_started` and arrives while the session is WAITING.
+
+  This row replaced an earlier deliberate choice to leave the pair
+  unlisted, so that a late `task_started` could not silently downgrade
+  WAITING to EXECUTING and hide the fact that the agent needed
+  attention. Real captures made the opposite risk larger: without the
+  row, every denial leaves the light stuck red indefinitely, and a red
+  that outlives its cause is precisely what teaches a developer to stop
+  trusting red. The trade is narrow — hooks arrive in order over
+  loopback HTTP, so a genuinely out-of-order `task_started` is unlikely,
+  while denials are routine.
 
 `session_started` applies from **any** state, not just from `(none)`: it
 declares that the session is now fresh and idle, whatever the server
@@ -154,15 +179,60 @@ the adapter boundary. Decide this before writing the Claude adapter.
 
 ### Claude Code hook mapping
 
+**Validated** against payloads captured from real Claude Code sessions
+(see `tools/capture/`). Every mapping is a pure function of one payload —
+no adapter-side memory — which is what lets adapters run hook-side.
+
 | Claude Code hook | Normalized event |
 |---|---|
 | SessionStart | session_started |
-| PreToolUse (first in a task) | task_started |
-| Notification (permission/needs-input) | permission_requested |
-| PostToolUse (following a WAITING resolution) | permission_granted |
+| UserPromptSubmit | task_started |
+| PermissionRequest | permission_requested |
+| PostToolUse | permission_granted |
+| PostToolUseFailure | task_failed |
 | Stop | task_completed |
-| (explicit failure signal, if/when available) | task_failed |
 | SessionEnd | session_ended |
+| PreToolUse | *(ignored)* |
+
+Notes from the capture, correcting the original best-effort table:
+
+- **`Notification` never fires.** It was the original table's only route
+  into WAITING, so as written the red light could never illuminate. The
+  real source is `PermissionRequest`, which also carries `session_id`
+  where `Notification` does not — meaning `Notification` could not have
+  populated the envelope's `sessionId` even if it had fired.
+- **`UserPromptSubmit`, not `PreToolUse`, is `task_started`.** The
+  original "PreToolUse (first in a task)" required adapter memory to
+  identify "first", and broke outright on a turn with no tool calls: a
+  captured `SessionStart -> UserPromptSubmit -> Stop` session (the user
+  typed "hi") emitted no `task_started` at all, so `task_completed`
+  arrived at an IDLE session and landed in UNKNOWN.
+- **`PreToolUse` is ignored.** `UserPromptSubmit` already establishes
+  EXECUTING at the start of the turn, earlier than the first tool call,
+  so `PreToolUse` adds no state. `PostToolUse` still provides a
+  per-tool-call heartbeat for the §7 staleness cadence.
+- **`PostToolUseFailure` exists** and fires on an ordinary non-zero exit
+  (verified deliberately). The original table had no failure signal at
+  all and speculated one might not exist; ERROR is reachable for Claude
+  Code.
+- **A denial is invisible except as an absence.** `PermissionDenied` did
+  not fire on a real denial. The observed sequence is
+  `PreToolUse -> PermissionRequest -> UserPromptSubmit` with no
+  `PostToolUse`, versus `... -> PostToolUse` when approved.
+- **`PermissionRequest` follows `PreToolUse`**, rather than preceding the
+  tool call as the original table's ordering implied.
+
+Field notes: every hook carries `session_id`, `cwd`, `transcript_path`
+and `hook_event_name`. `SessionStart` carries `source` (observed:
+`startup`, `resume`), `SessionEnd` carries `reason`, and the in-turn
+hooks carry `prompt_id`, which identifies a single turn and may be a
+better basis for task identity than inference if that is ever needed.
+
+Still unobserved, and therefore still unmapped: `StopFailure`,
+`PermissionDenied`, `SubagentStart`/`SubagentStop`, and a permission
+denial issued *without* a typed reason — the last of these matters
+because it is unknown whether anything at all is emitted to clear
+WAITING in that case.
 
 ### Copilot CLI hook mapping
 

@@ -10,3 +10,13 @@
 # must never be committed (PRD §8).
 token
 *.token
+
+# Phase-2 raw hook captures — contain real prompts, file paths and
+# code, which is exactly what PRD §9 keeps out of this repo. Scrubbed
+# fixtures go in testdata/, never these.
+/capture/
+
+# Temporary phase-2 capture instrumentation. Machine-specific (absolute
+# paths) and meant to be deleted once the adapter exists; the committed
+# template at tools/capture/settings.capture.json is the shareable form.
+/.claude/settings.json

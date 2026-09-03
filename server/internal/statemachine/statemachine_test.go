@@ -122,8 +122,6 @@ func TestSpecificUnlistedPairs(t *testing.T) {
 		{"idle + task_completed", types.StateIdle, types.EventTaskCompleted},
 		// A second Stop for one task, or a lost task_started.
 		{"done + task_completed", types.StateDone, types.EventTaskCompleted},
-		// Permission granted with no prompt outstanding.
-		{"executing + permission_granted", types.StateExecuting, types.EventPermissionGranted},
 		// session_ended is a lifecycle concern, not a matrix event.
 		{"executing + session_ended", types.StateExecuting, types.EventSessionEnded},
 	}
