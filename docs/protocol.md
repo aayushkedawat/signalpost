@@ -46,6 +46,11 @@ UNKNOWN    Server no longer trusts its last known state for this session.
 | EXECUTING | permission_granted | EXECUTING |
 | WAITING | task_failed | ERROR |
 | ERROR | task_started | EXECUTING |
+| ERROR | permission_granted | EXECUTING |
+| ERROR | permission_requested | WAITING |
+| EXECUTING | task_started | EXECUTING |
+| WAITING | permission_requested | WAITING |
+| WAITING | task_completed | DONE |
 | DONE | task_started | EXECUTING |
 | any | session_started | IDLE |
 | UNKNOWN | any valid lifecycle event | derived per this table, from the event alone |
@@ -56,6 +61,32 @@ UNKNOWN    Server no longer trusts its last known state for this session.
 Any current/event pair not listed above is logged as an unexpected
 transition and the session moves to UNKNOWN rather than silently
 ignored or guessed at.
+
+Five further rows were added in phase 4, after a user reported the light
+turning cyan ("not sure") during ordinary work. Replaying the captured
+sessions through the table found seven transitions falling off it:
+
+- `ERROR + permission_granted` and `ERROR + permission_requested` —
+  **ERROR is not a terminal state.** A command exits non-zero and the
+  next one succeeds or asks for approval. This was the most frequent
+  cause: any failed tool call poisoned the rest of the turn.
+- `EXECUTING + task_started` — a second prompt while the agent is still
+  working (the user queues a message, or interrupts and retypes).
+- `WAITING + permission_requested` — two prompts back to back.
+- `WAITING + task_completed` — the turn ends while a prompt is
+  outstanding, e.g. a denial that stopped the agent.
+
+Each of these was worse than an ordinary wrong answer, because UNKNOWN
+outranks EXECUTING in §9 aggregation: one stray transition hijacked the
+headline colour for the whole system.
+
+The pattern is worth noting for §3 as a whole. This table was written as
+"the transitions we expect" and has now needed three rounds of additions,
+each found only by running it against reality. Every addition so far has
+been semantically obvious in hindsight. It may be worth asking whether
+unlisted pairs should derive from the event alone — the UNKNOWN row's own
+rule — rather than falling to UNKNOWN, which would make the whole class
+of defect impossible. That is a real design change and is not made here.
 
 The two rows marked EXECUTING above were added in phase 2 from captured
 Claude Code sequences, not from reasoning:
@@ -148,6 +179,15 @@ outright, rather than creating a session in order to remove it — the
 server should never publish, even briefly, a state it never observed.
 
 ## 7. Staleness → UNKNOWN
+
+**Tuned (phase 4):** `StaleFloor` 15min, `StaleFactor` 40,
+`StaleMinSamples` 5. Measured against captured sessions, in-turn gaps
+while EXECUTING ran p50 16s, p90 31s, p95 97s, with legitimate gaps up to
+192s and one of 18 minutes spent thinking before a permission prompt. The
+original 2min floor fired on 6 of 165 real gaps and every one was a false
+positive. The only genuinely abandoned session in the captures had been
+silent for 8.5 hours, so there is a wide margin between "thinking" and
+"gone" and no reason to crowd the former.
 
 Not a fixed timeout. Heuristic (v1, to be tuned empirically): track each
 session's recent event cadence; if a session has been emitting events

@@ -53,9 +53,22 @@ type Config struct {
 // first pass meant to be tuned empirically (protocol.md §7).
 func DefaultConfig() Config {
 	return Config{
-		DoneDuration:    5 * time.Second,
-		StaleFactor:     20,
-		StaleFloor:      2 * time.Minute,
+		DoneDuration: 5 * time.Second,
+		// Tuned against captured sessions, as protocol.md §7 asks for.
+		// Real in-turn gaps while EXECUTING measured p50 16s, p90 31s,
+		// p95 97s, with legitimate gaps observed up to 192s (a long tool
+		// call) and 18min (thinking before a permission prompt). The
+		// original 2min floor fired on 6 of 165 real gaps — every one a
+		// false positive, showing "not sure" while the agent was working
+		// perfectly well.
+		//
+		// §7 is explicit that false negatives (staying EXECUTING too
+		// long) beat false positives, so these are deliberately generous.
+		// The one clearly-abandoned session in the captures sat silent
+		// for 8.5 hours, so there is a lot of room between "thinking" and
+		// "gone" and no need to crowd the former.
+		StaleFactor:     40,
+		StaleFloor:      15 * time.Minute,
 		StaleMinSamples: 5,
 		MaxIntervals:    10,
 		MaxSeenEventIDs: 256,

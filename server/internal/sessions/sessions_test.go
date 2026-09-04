@@ -38,6 +38,21 @@ func newTestManager(t *testing.T) (*Manager, *clock) {
 	return NewWithClock(DefaultConfig(), c.Now), c
 }
 
+// newStalenessTestManager pins the staleness tuning rather than
+// inheriting it. protocol.md §7 says the heuristic is meant to be tuned
+// empirically, so a test that hard-codes the shipped floor breaks every
+// time someone does exactly that — and says nothing about whether the
+// mechanism still works. The shipped values are asserted separately, in
+// TestShippedStalenessDefaults.
+func newStalenessTestManager(t *testing.T) (*Manager, *clock) {
+	t.Helper()
+	c := newClock()
+	cfg := DefaultConfig()
+	cfg.StaleFloor = 2 * time.Minute
+	cfg.StaleFactor = 20
+	return NewWithClock(cfg, c.Now), c
+}
+
 var eventSeq int
 
 func ev(tool, session string, kind types.NormalizedEventType) types.NormalizedEvent {
@@ -544,6 +559,128 @@ func TestCapturedClaudeSequences(t *testing.T) {
 	}
 }
 
+// TestSequencesThatFellOffTheMatrix covers the five transitions that
+// replaying real captured sessions showed were missing. Every one turned
+// the light cyan ("not sure") in the middle of ordinary work, which is
+// worse than being wrong quietly: UNKNOWN outranks EXECUTING in §9
+// aggregation, so a single one of these hijacked the headline colour.
+func TestSequencesThatFellOffTheMatrix(t *testing.T) {
+	cases := []struct {
+		name   string
+		why    string
+		events []types.NormalizedEventType
+		want   types.AgentState
+	}{
+		{
+			name: "a tool fails and the next one succeeds",
+			why:  "ERROR is not terminal — work continues after a failed command",
+			events: []types.NormalizedEventType{
+				types.EventTaskStarted, types.EventTaskFailed,
+				types.EventPermissionGranted,
+			},
+			want: types.StateExecuting,
+		},
+		{
+			name: "a tool fails and the next one needs approval",
+			why:  "a prompt after a failure still needs a human",
+			events: []types.NormalizedEventType{
+				types.EventTaskStarted, types.EventTaskFailed,
+				types.EventPermissionRequested,
+			},
+			want: types.StateWaiting,
+		},
+		{
+			name: "a second prompt arrives while still working",
+			why:  "the user queued a message, or interrupted and retyped",
+			events: []types.NormalizedEventType{
+				types.EventTaskStarted, types.EventTaskStarted,
+			},
+			want: types.StateExecuting,
+		},
+		{
+			name: "two permission prompts back to back",
+			why:  "idempotent: still waiting on the same human",
+			events: []types.NormalizedEventType{
+				types.EventTaskStarted, types.EventPermissionRequested,
+				types.EventPermissionRequested,
+			},
+			want: types.StateWaiting,
+		},
+		{
+			name: "the turn ends while a prompt is outstanding",
+			why:  "a denial that stopped the agent takes the prompt with it",
+			events: []types.NormalizedEventType{
+				types.EventTaskStarted, types.EventPermissionRequested,
+				types.EventTaskCompleted,
+			},
+			want: types.StateDone,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := newTestManager(t)
+			m.Apply(ev("claude", "s1", types.EventSessionStarted))
+			for _, e := range tc.events {
+				if out := m.Apply(ev("claude", "s1", e)); out.Unexpected {
+					t.Fatalf("%s fell off the matrix (%s)", e, tc.why)
+				}
+			}
+			mustState(t, m, "claude", "s1", tc.want)
+		})
+	}
+}
+
+// TestShippedStalenessDefaults pins the tuning the server actually ships
+// with, so a change to it is a deliberate edit rather than a side effect.
+//
+// The numbers come from replaying captured Claude Code sessions: real
+// in-turn gaps while EXECUTING measured p50 16s, p90 31s, p95 97s, with
+// legitimate gaps up to 192s and, in one case, 18 minutes of thinking
+// before a permission prompt. The previous 2-minute floor fired on 6 of
+// 165 real gaps, every one a false positive. §7 prefers false negatives.
+func TestShippedStalenessDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.StaleFloor < 10*time.Minute {
+		t.Errorf("StaleFloor is %v; measured sessions think for minutes at a "+
+			"time, and a floor this low reports UNKNOWN during ordinary work",
+			cfg.StaleFloor)
+	}
+	if cfg.StaleFactor < 20 {
+		t.Errorf("StaleFactor is %v; too small a multiple punishes a chatty "+
+			"session for one slow step", cfg.StaleFactor)
+	}
+	if cfg.StaleMinSamples < 3 {
+		t.Errorf("StaleMinSamples is %d; too few samples makes the median "+
+			"meaningless", cfg.StaleMinSamples)
+	}
+}
+
+// TestThinkingDoesNotGoUnknown is the regression test for the reported
+// bug: the light turned cyan ("not sure") while the agent was simply
+// thinking between tool calls.
+func TestThinkingDoesNotGoUnknown(t *testing.T) {
+	m, c := newTestManager(t) // shipped tuning, deliberately
+	m.Apply(ev("claude", "s1", types.EventSessionStarted))
+	m.Apply(ev("claude", "s1", types.EventTaskStarted))
+
+	// A brisk tool-call cadence, which is what makes a session "chatty"
+	// and drags its staleness threshold down.
+	for i := 0; i < 8; i++ {
+		c.advance(2 * time.Second)
+		m.Apply(ev("claude", "s1", types.EventPermissionGranted))
+	}
+	mustState(t, m, "claude", "s1", types.StateExecuting)
+
+	// The longest legitimate in-turn gap observed in real captures.
+	c.advance(192 * time.Second)
+	mustState(t, m, "claude", "s1", types.StateExecuting)
+
+	// Still thinking, five minutes in. Ordinary for a hard problem.
+	c.advance(5 * time.Minute)
+	mustState(t, m, "claude", "s1", types.StateExecuting)
+}
+
 // TestUnknownDoesNotAutoResolve: UNKNOWN persists until a real event.
 func TestUnknownDoesNotAutoResolve(t *testing.T) {
 	m, c := newTestManager(t)
@@ -655,7 +792,7 @@ func TestSessionsAreKeyedByToolAndID(t *testing.T) {
 // TestStalenessMarksChattySessionUnknown covers protocol.md §7: a session
 // that was emitting regularly and then goes fully silent while EXECUTING.
 func TestStalenessMarksChattySessionUnknown(t *testing.T) {
-	m, c := newTestManager(t)
+	m, c := newStalenessTestManager(t)
 	m.Apply(ev("claude", "s1", types.EventSessionStarted))
 
 	// Establish a ~1s cadence, ending in EXECUTING.
@@ -741,7 +878,7 @@ func TestStalenessOnlyAppliesToExecuting(t *testing.T) {
 // staleness it stays there until a real event, and cadence history is
 // rebuilt from scratch.
 func TestStalenessDoesNotRefire(t *testing.T) {
-	m, c := newTestManager(t)
+	m, c := newStalenessTestManager(t)
 	m.Apply(ev("claude", "s1", types.EventSessionStarted))
 	for i := 0; i < 8; i++ {
 		c.advance(time.Second)

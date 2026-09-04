@@ -36,6 +36,24 @@ var matrix = map[key]types.AgentState{
 	{types.StateWaiting, types.EventInputReceived}: types.StateExecuting,
 	{types.StateWaiting, types.EventTaskFailed}:    types.StateError,
 	{types.StateError, types.EventTaskStarted}:     types.StateExecuting,
+	// The five rows below were added after replaying real captured Claude
+	// Code sessions through this table: each occurred in practice and fell
+	// off the matrix, turning the light cyan ("not sure") during ordinary
+	// work.
+	//
+	// ERROR is not terminal — a failed tool call is followed by more work,
+	// not by the end of the session. A command exits non-zero (ERROR) and
+	// the next tool call then succeeds, or asks for approval.
+	{types.StateError, types.EventPermissionGranted}:   types.StateExecuting,
+	{types.StateError, types.EventPermissionRequested}: types.StateWaiting,
+	// A second prompt submitted while the agent is still working: the user
+	// queues a message, or interrupts and retypes. Work continues.
+	{types.StateExecuting, types.EventTaskStarted}: types.StateExecuting,
+	// Two permission prompts back to back. Idempotent: still waiting.
+	{types.StateWaiting, types.EventPermissionRequested}: types.StateWaiting,
+	// The turn ended while a prompt was outstanding — a denial that
+	// stopped the agent, for instance. The prompt goes with it.
+	{types.StateWaiting, types.EventTaskCompleted}: types.StateDone,
 	{types.StateDone, types.EventTaskStarted}:      types.StateExecuting,
 	// session_started is handled ahead of this table (it applies from any
 	// state), so it deliberately has no rows here.
