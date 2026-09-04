@@ -41,8 +41,24 @@ const _offlineGlyph = '⚠︎';
 class TrayController with TrayListener {
   TrayController(
     this._client, {
-    this.interval = const Duration(seconds: 1),
-  });
+    Duration? interval,
+  }) : interval = interval ?? _defaultInterval();
+
+  /// 300ms rather than a second.
+  ///
+  /// The dominant delay before the light turns red is Claude Code's own
+  /// 6.0s timer before it raises the permission notification (measured
+  /// across 67 samples at 5.99–6.02s), which nothing here can shorten:
+  /// a shorter timer of our own cannot tell a slow auto-approved command
+  /// from a human being asked, and reintroduces false reds. Polling is
+  /// the only part of the delay we own, so it should not be the part
+  /// anyone notices. On loopback each poll is a sub-millisecond request
+  /// against an in-memory map.
+  static Duration _defaultInterval() {
+    final override = Platform.environment['TRAFFIC_LIGHT_POLL_MS'];
+    final ms = int.tryParse(override ?? '');
+    return Duration(milliseconds: ms != null && ms > 0 ? ms : 300);
+  }
 
   final StateClient _client;
   final Duration interval;

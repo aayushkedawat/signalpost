@@ -305,6 +305,24 @@ better basis for task identity than inference if that is ever needed.
 > The practical rule: a prompt answered within 6 seconds never turns the
 > light red; one that outlives 6 seconds does.
 >
+> **The 6 seconds cannot be shortened from our side**, which is worth
+> recording because the shortcut is tempting. `PermissionRequest` fires
+> immediately, so a short timer of our own looks like an obvious
+> improvement. It is not: `PostToolUse` arrives when the tool *finishes*,
+> not when permission is granted, so an auto-approved command is
+> indistinguishable from a pending human prompt until either the tool
+> completes or the notification fires. Measured over 26 auto-resolved
+> permission requests (gap to `PostToolUse` 1.47–13.5s, median 4.04s), a
+> timer of our own would flash red on 100% of them at 1s, 85% at 2s and
+> 35% at 5s. Claude Code's notification knows something we cannot
+> observe — whether a prompt is actually on screen — and 6s is the price
+> of that knowledge.
+>
+> End to end the delay is 6.0s plus the client poll interval; the server
+> itself contributes 0.5ms. The desktop app polls every 300ms for that
+> reason: polling is the only part of the delay we own, so it should not
+> be the part anyone notices.
+>
 > That is the right boundary for an ambient signal — it will not flash
 > for a prompt already being dealt with — but it is a false negative, and
 > it is Claude Code's number, not ours. It could change in any release
