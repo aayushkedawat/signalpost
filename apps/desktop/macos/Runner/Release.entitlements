@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  App Sandbox is deliberately OFF.
+
+	  The app must read the bearer token the server writes to
+	  ~/.traffic-light/token (0600). A sandboxed app cannot reach a path
+	  outside its own container without the user picking it in an open
+	  panel every launch, which is absurd for a status light. The
+	  alternatives were worse: have the server write a second copy of the
+	  token into this app's container (spreading a secret around to work
+	  around a restriction), or require the token be passed by
+	  environment variable (the app then does not work when launched
+	  normally from Finder).
+
+	  This is a local personal tool built from source, not something
+	  shipped through the App Store, so the sandbox buys little here.
+	  If this is ever distributed, revisit: sandbox with a security-scoped
+	  bookmark to the token file is the correct answer, and it is a real
+	  piece of work rather than a flag flip.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Polls GET /state on loopback. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

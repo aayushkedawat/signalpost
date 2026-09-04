@@ -1,0 +1,18 @@
+name: traffic_light_core
+description: >-
+  Shared data shapes and GET /state client for the Traffic Light desktop
+  and terminal clients. Deliberately thin: no state-machine, aggregation,
+  or staleness logic lives here (PRD sections 4 and 11 — the server is the
+  sole authority over state).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  http: ^1.2.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

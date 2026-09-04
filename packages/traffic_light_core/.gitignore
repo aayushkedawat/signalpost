@@ -1,0 +1,8 @@
+# Dart tooling output
+.dart_tool/
+.packages
+build/
+
+# A path-dependency package consumed only inside this repo; the lockfile
+# belongs to the apps that depend on it, not here.
+pubspec.lock
