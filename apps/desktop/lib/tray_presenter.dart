@@ -53,13 +53,35 @@ class TrayController with TrayListener {
 
   Future<void> start() async {
     trayManager.addListener(this);
-    // No icon: on macOS a title-only item renders cleanly, and it avoids
-    // shipping a set of PNGs that would have to be regenerated for every
-    // state and both appearances.
+
+    // setIcon is the *only* place tray_manager constructs its
+    // NSStatusItem (TrayManagerPlugin.swift: `if (trayIcon == nil) {
+    // trayIcon = TrayIcon() }`). Every other call, setTitle included,
+    // goes through `trayIcon?.` — so without this the app runs, polls
+    // happily, reports no error, and puts nothing in the menu bar.
+    //
+    // The image is deliberately transparent: the visible content is the
+    // title, which carries the glyph and the label together. Colouring
+    // the icon instead would mean six PNGs per appearance and would put
+    // the meaning back into colour alone, which PRD §10 forbids.
+    await trayManager.setIcon('assets/tray_placeholder.png');
     await trayManager.setTitle('$_offlineGlyph starting…');
     await _refresh();
     _timer = Timer.periodic(interval, (_) => _refresh());
     _log('polling ${_client.baseUrl} every ${interval.inMilliseconds}ms');
+
+    // Confirms the NSStatusItem actually exists and has been given a
+    // position in the menu bar. Null or zero-width here means the item
+    // was never created, which is otherwise completely silent.
+    if (_debug) {
+      final bounds = await trayManager.getBounds();
+      _log(bounds == null
+          ? 'NO STATUS ITEM — nothing will appear in the menu bar'
+          : 'status item at ${bounds.left.toStringAsFixed(0)},'
+              '${bounds.top.toStringAsFixed(0)} '
+              'size ${bounds.width.toStringAsFixed(0)}x'
+              '${bounds.height.toStringAsFixed(0)}');
+    }
   }
 
   Future<void> dispose() async {

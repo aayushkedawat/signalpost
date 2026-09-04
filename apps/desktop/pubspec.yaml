@@ -60,11 +60,12 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
+
+  assets:
+    # Forces tray_manager to create its NSStatusItem — see setIcon in
+    # tray_presenter.dart for why a transparent image is needed at all.
+    - assets/tray_placeholder.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
