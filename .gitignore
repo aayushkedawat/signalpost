@@ -20,3 +20,7 @@ token
 # paths) and meant to be deleted once the adapter exists; the committed
 # template at tools/capture/settings.capture.json is the shareable form.
 /.claude/settings.json
+
+# Scratch files left behind by permission-prompt testing.
+/permission-test*.txt
+/test.txt
