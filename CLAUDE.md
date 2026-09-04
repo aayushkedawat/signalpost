@@ -35,13 +35,13 @@ until told to; see build order below.
   tracking, no transcripts, no multi-user, no cloud/remote access. If a
   task seems to need one of these, stop and flag it rather than adding it.
 
-## Build order (current phase: **2**)
+## Build order (current phase: **3**)
 
 1. **Server + state machine + simulator + minimal terminal output** (done)
 2. Claude Code hook integration (adapter), tested against real hook
-   payloads ← **we are here** (adapter + hook binary done and validated
-   against captured payloads; remaining: run it against a live session)
-3. Copilot CLI hook integration (adapter)
+   payloads (done — validated against a live session, which is what
+   caught the `PermissionRequest` false-red defect; see protocol.md §8)
+3. Copilot CLI hook integration (adapter) ← **we are here**
 4. Desktop app (Flutter, menu bar/tray)
 5. Terminal app polish (Dart CLI)
 6. watchOS app (Swift, Simulator-only initially)

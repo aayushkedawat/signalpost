@@ -196,11 +196,14 @@ no adapter-side memory — which is what lets adapters run hook-side.
 
 Notes from the capture, correcting the original best-effort table:
 
-- **`Notification` never fires.** It was the original table's only route
-  into WAITING, so as written the red light could never illuminate. The
-  real source is `PermissionRequest`, which also carries `session_id`
-  where `Notification` does not — meaning `Notification` could not have
-  populated the envelope's `sessionId` even if it had fired.
+- **`Notification` is the WAITING source, and the original table had it
+  right.** An intermediate revision of this document claimed it "never
+  fires" and that it "carries no `session_id`". Both were false. The
+  first came from a capture window too short to contain one — it only
+  fires after a prompt has gone unanswered for 6 seconds. The second came
+  from a hand-written test fixture rather than a real payload, which is
+  the exact failure this section's real-payload fixtures exist to
+  prevent. See the corrected row above.
 - **`UserPromptSubmit`, not `PreToolUse`, is `task_started`.** The
   original "PreToolUse (first in a task)" required adapter memory to
   identify "first", and broke outright on a turn with no tool calls: a
@@ -256,9 +259,23 @@ better basis for task identity than inference if that is ever needed.
 > which `Stop` has already reported as DONE, so mapping it would turn
 > every completed turn red instead of green.
 >
-> The cost is a false negative: a prompt answered before the
-> notification threshold produces no WAITING at all. PRD §7 prefers that
-> to a red that does not mean "needs you".
+> **The threshold is exactly 6 seconds.** Across 12 captured pairs the
+> delay from `PermissionRequest` to its `Notification` was 5.99–6.02s,
+> so this is a fixed timer in Claude Code rather than an approximation.
+> The practical rule: a prompt answered within 6 seconds never turns the
+> light red; one that outlives 6 seconds does.
+>
+> That is the right boundary for an ambient signal — it will not flash
+> for a prompt already being dealt with — but it is a false negative, and
+> it is Claude Code's number, not ours. It could change in any release
+> without notice, and nothing here would fail loudly if it did: the light
+> would simply stop going red for short prompts. PRD §7 prefers that to a
+> red that does not mean "needs you", but it is worth re-checking against
+> captures if WAITING ever seems to under-report.
+>
+> Measured over the same captures, mapping `PermissionRequest` instead
+> would have been wrong **52% of the time** (13 of 25 were auto-resolved
+> with no human involved).
 >
 > `SubagentStop` is also left unmapped — a subagent finishing says
 > nothing about the main agent, which is usually still working.
