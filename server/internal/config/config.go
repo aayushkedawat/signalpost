@@ -30,9 +30,15 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		Addr:           "127.0.0.1:8787",
-		TokenPath:      DefaultTokenPath(),
-		WaitingTooLong: 30 * time.Second,
+		Addr:      "127.0.0.1:8787",
+		TokenPath: DefaultTokenPath(),
+		// Measured against captured sessions: genuine answer times for a
+		// permission prompt were 1.8, 6.4, 21.1, 30.3, 56.3, 67.8, 91.6
+		// and 602.7 seconds. At the original 30s, half of all ordinary
+		// answering would have tripped this, making the "stale" colour
+		// routine and therefore meaningless. At 2 minutes only the
+		// genuinely abandoned one does.
+		WaitingTooLong: 2 * time.Minute,
 		Sessions:       sessions.DefaultConfig(),
 	}
 }

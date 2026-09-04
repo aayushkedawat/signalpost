@@ -365,6 +365,19 @@ is approved either: the next event is `PostToolUse`, which arrives when
 the approved command *finishes*. Captured turns show red persisting 13s
 and 262s while the agent worked on exactly what the user had authorised.
 
+**How the clients cope with this.** Since a WAITING that has gone quiet
+may or may not still be real, the clients render `waitingTooLong` as its
+own colour (orange) rather than as a more urgent red. Orange says "this
+was red, and it is no longer fresh" without claiming to know which. That
+is a display decision only: the state stays WAITING, the server remains
+the sole authority, and no timeout is allowed to change a state — which
+is what CLAUDE.md forbids.
+
+The threshold is 2 minutes, not the original 30 seconds. Measured answer
+times for real permission prompts were 1.8, 6.4, 21.1, 30.3, 56.3, 67.8,
+91.6 and 602.7 seconds, so at 30s half of all ordinary answering would
+have tripped it and the stale colour would have meant nothing.
+
 There is currently no known hook that fires at the moment a permission
 prompt is answered, either way. `PostToolUseFailure` carries an
 `is_interrupt` field that would be the natural discriminator, but it has

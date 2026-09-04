@@ -55,7 +55,14 @@ var display = map[string]struct {
 	"executing": {"EXECUTING working", "\033[33m"},
 	"done":      {"DONE     finished", "\033[32m"},
 	"idle":      {"IDLE     nothing running", "\033[90m"},
+	// Not a real state: a display-only key for a WAITING the server has
+	// flagged as stale. Orange, matching the desktop app.
+	staleWaiting: {"WAITING  needs you", "\033[38;5;208m"},
 }
+
+// staleWaiting is deliberately not a value the server can send, so it can
+// never be confused with a state.
+const staleWaiting = "waiting(stale)"
 
 const reset = "\033[0m"
 
@@ -164,11 +171,21 @@ func render(st state, colorize bool) string {
 			label = strings.ToUpper(tool.State)
 		}
 		line := fmt.Sprintf("%-9s %s", name, label)
-		if tool.WaitingTooLong {
-			line += "  (waiting a while)"
+		// A WAITING that has gone quiet is ambiguous: nothing fires when a
+		// permission prompt is answered (protocol.md §8), so it may still
+		// be on screen or may have been dealt with minutes ago. Say so,
+		// and paint it differently from a fresh one, matching the desktop
+		// app's orange. The state itself is unchanged.
+		stale := tool.State == "waiting" && tool.WaitingTooLong
+		if stale {
+			line += "  (a while — may already be answered)"
+		}
+		colorKey := tool.State
+		if stale {
+			colorKey = staleWaiting
 		}
 		fmt.Fprintf(&b, "          %s  %s\n",
-			paint(tool.State, line, colorize), sessionCount(tool.ActiveSessions))
+			paint(colorKey, line, colorize), sessionCount(tool.ActiveSessions))
 	}
 	return b.String()
 }

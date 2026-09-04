@@ -60,6 +60,54 @@ void main() {
       }
     });
 
+    test('a stale wait is visually distinct from a fresh one', () {
+      // Nothing fires when a prompt is answered, so a WAITING that has
+      // gone quiet may already have been dealt with. It must not look
+      // identical to one that genuinely needs attention now, or the red
+      // light stops meaning anything.
+      final fresh = controller().titleForTesting(PollResult.success(
+        snapshot(overallState: 'waiting', overallTool: 'claude', tools: {
+          'claude': {'state': 'waiting', 'activeSessions': 1, 'waitingTooLong': false},
+        }),
+      ));
+      final stale = controller().titleForTesting(PollResult.success(
+        snapshot(overallState: 'waiting', overallTool: 'claude', tools: {
+          'claude': {'state': 'waiting', 'activeSessions': 1, 'waitingTooLong': true},
+        }),
+      ));
+      expect(fresh, '🔴 claude');
+      expect(stale, '🟠 claude');
+      expect(fresh, isNot(equals(stale)));
+    });
+
+    test('a stale wait is still WAITING, not a new state', () {
+      // Display only: the server stays the sole authority (PRD section 4).
+      final snap = snapshot(
+        overallState: 'waiting',
+        overallTool: 'claude',
+        tools: {
+          'claude': {'state': 'waiting', 'activeSessions': 1, 'waitingTooLong': true},
+        },
+      );
+      expect(snap.overallState, AgentState.waiting);
+      expect(snap.tools.single.state, AgentState.waiting);
+      expect(snap.overallWaitingTooLong, isTrue);
+    });
+
+    test('only WAITING gets the stale treatment', () {
+      // waitingTooLong is meaningless on other states; a stray true must
+      // not repaint them.
+      for (final state in AgentState.values) {
+        if (state == AgentState.waiting) continue;
+        final title = controller().titleForTesting(PollResult.success(
+          snapshot(overallState: state.wireName, overallTool: 't', tools: {
+            't': {'state': state.wireName, 'activeSessions': 1, 'waitingTooLong': true},
+          }),
+        ));
+        expect(title, isNot(contains('🟠')), reason: state.name);
+      }
+    });
+
     test('each state gets a distinct glyph', () {
       final seen = <String>{};
       for (final state in AgentState.values) {
@@ -88,24 +136,17 @@ void main() {
       }
     });
 
-    test('flags a wait that has gone on too long', () {
+    test('a stale wait says so, and says it may already be answered', () {
       final row = controller().rowForTesting(tool({
         'state': 'waiting',
         'activeSessions': 1,
         'waitingTooLong': true,
       }));
+      expect(row, startsWith('🟠'));
+      // The state text is unchanged — it is still WAITING (protocol.md
+      // section 5), and section 10 wants the meaning in the text.
       expect(row, contains('needs you'));
-      expect(row, contains('a while now'));
-    });
-
-    test('waitingTooLong annotates rather than changing the state', () {
-      // protocol.md section 5: it is emphasis, not a seventh state.
-      final urgent = controller().rowForTesting(tool({
-        'state': 'waiting',
-        'activeSessions': 1,
-        'waitingTooLong': true,
-      }));
-      expect(urgent, startsWith('🔴'));
+      expect(row, contains('may already be answered'));
     });
 
     test('mentions session count only when it is worth mentioning', () {

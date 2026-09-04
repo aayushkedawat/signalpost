@@ -97,6 +97,20 @@ class StateSnapshot {
     );
   }
 
+  /// Whether the tool driving the headline has been waiting long enough
+  /// that the server flagged it.
+  ///
+  /// `overall` carries only a state and a tool name, so this looks up the
+  /// matching row. That is presentation convenience, not state
+  /// derivation: the value still comes from the server, and no client
+  /// decides for itself how long is too long.
+  bool get overallWaitingTooLong {
+    for (final tool in tools) {
+      if (tool.tool == overallTool) return tool.waitingTooLong;
+    }
+    return false;
+  }
+
   /// A one-line summary for a tray title or notification.
   ///
   /// Always includes the label text, never colour alone (PRD §10).

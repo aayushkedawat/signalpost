@@ -143,8 +143,12 @@ func TestFullPipeline(t *testing.T) {
 		t.Fatal("flagged urgent immediately on entering WAITING")
 	}
 
-	// The 30s urgency threshold flips the flag but does not change state.
-	h.clock.advance(31 * time.Second)
+	// Past the urgency threshold the flag flips, but the state does not:
+	// waitingTooLong is a display hint (protocol.md §5), and the clients
+	// render it as a distinct colour rather than as a seventh state.
+	// Derived from config rather than hard-coded, so tuning the threshold
+	// does not break a test that is not about the threshold.
+	h.clock.advance(config.Default().WaitingTooLong + time.Second)
 	st = h.state()
 	if !st.Tools["claude"].WaitingTooLong {
 		t.Fatal("still not urgent after 31s in WAITING")

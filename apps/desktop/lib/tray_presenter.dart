@@ -30,6 +30,20 @@ const _glyphs = <AgentState, String>{
   AgentState.idle: '⚪',
 };
 
+/// A WAITING that the server has flagged as having lasted a while.
+///
+/// Its own colour rather than a variant of red, because it means
+/// something genuinely different. Nothing fires when a permission prompt
+/// is answered (protocol.md §8), so a WAITING that has gone quiet is
+/// ambiguous: the prompt may still be on screen, or it may have been
+/// answered minutes ago and we never heard. Orange says "this was red,
+/// and it is no longer fresh" without claiming to know which.
+///
+/// This is display only. The state stays WAITING — the server is still
+/// the sole authority (PRD §4), and `waitingTooLong` is a hint it already
+/// computes and PRD §2 already asks clients to show differently.
+const _staleWaitingGlyph = '🟠';
+
 /// Deliberately not a circle. "I cannot reach the server" is a fact about
 /// this client, not a state any agent is in, and dressing it as another
 /// coloured dot would be the app inventing a state the server never
@@ -89,15 +103,24 @@ class TrayController with TrayListener {
     // Confirms the NSStatusItem actually exists and has been given a
     // position in the menu bar. Null or zero-width here means the item
     // was never created, which is otherwise completely silent.
+    //
+    // Sampled twice: immediately after creation macOS has not always
+    // placed the item yet, and the first reading can be a placeholder
+    // that looks alarming but settles a moment later.
     if (_debug) {
-      final bounds = await trayManager.getBounds();
-      _log(bounds == null
-          ? 'NO STATUS ITEM — nothing will appear in the menu bar'
-          : 'status item at ${bounds.left.toStringAsFixed(0)},'
-              '${bounds.top.toStringAsFixed(0)} '
-              'size ${bounds.width.toStringAsFixed(0)}x'
-              '${bounds.height.toStringAsFixed(0)}');
+      await _logBounds('initial');
+      Future.delayed(const Duration(seconds: 2), () => _logBounds('settled'));
     }
+  }
+
+  Future<void> _logBounds(String when) async {
+    final bounds = await trayManager.getBounds();
+    _log(bounds == null
+        ? 'NO STATUS ITEM ($when) — nothing will appear in the menu bar'
+        : 'status item ($when) at ${bounds.left.toStringAsFixed(0)},'
+            '${bounds.top.toStringAsFixed(0)} '
+            'size ${bounds.width.toStringAsFixed(0)}x'
+            '${bounds.height.toStringAsFixed(0)}');
   }
 
   Future<void> dispose() async {
@@ -127,7 +150,10 @@ class TrayController with TrayListener {
     final snapshot = result.snapshot;
     if (snapshot == null) return '$_offlineGlyph offline';
 
-    final glyph = _glyphs[snapshot.overallState] ?? _offlineGlyph;
+    final glyph = snapshot.overallState == AgentState.waiting &&
+            snapshot.overallWaitingTooLong
+        ? _staleWaitingGlyph
+        : _glyphs[snapshot.overallState] ?? _offlineGlyph;
     if (snapshot.isIdle) return glyph;
 
     // "🔴 claude" — the tool name is the useful half when something
@@ -174,12 +200,14 @@ class TrayController with TrayListener {
   }
 
   String _rowFor(ToolStatus tool) {
-    final glyph = _glyphs[tool.state] ?? _offlineGlyph;
+    final stale = tool.state == AgentState.waiting && tool.waitingTooLong;
+    final glyph =
+        stale ? _staleWaitingGlyph : _glyphs[tool.state] ?? _offlineGlyph;
     final buffer = StringBuffer('$glyph  ${tool.tool} — ${tool.state.label}');
 
-    // waitingTooLong is emphasis, not a distinct state (protocol.md §5),
-    // so it annotates the row rather than changing its colour.
-    if (tool.waitingTooLong) buffer.write(' (a while now)');
+    // The glyph changes, but the state text does not: it is still
+    // WAITING, and PRD §10 wants the meaning carried by the text.
+    if (stale) buffer.write(' (a while — may already be answered)');
 
     if (tool.activeSessions > 1) {
       buffer.write('  ·  ${tool.activeSessions} sessions');
