@@ -1,81 +1,30 @@
 {
   "_comment": [
-    "Traffic light AND raw payload capture, side by side.",
+    "Traffic light + capture of EVERY plausibly relevant hook event.",
     "",
     "Install: cp tools/hook-settings.debug.json .claude/settings.json",
     "         then restart Claude Code.",
     "",
-    "Capture writes to capture/raw.jsonl (gitignored: real prompts and code).",
-    "Analyze with: python3 tools/capture/summarize.py",
-    "Revert to tools/hook-settings.example.json when done."
+    "Purpose: find out whether ANY hook fires at the moment you answer a",
+    "permission prompt. Today WAITING is only cleared by PostToolUse, which",
+    "fires when the approved command finishes rather than when you approve",
+    "it, so the light stays red for the whole command. If nothing fires at",
+    "answer time, that is a hard limit of the hook surface and worth knowing",
+    "for certain rather than assuming.",
+    "",
+    "Deliberately excluded as high-volume and irrelevant: FileChanged,",
+    "CwdChanged, DirectoryAdded, ConfigChange, WorktreeCreate/Remove,",
+    "InstructionsLoaded, Setup, TeammateIdle."
   ],
   "hooks": {
-    "SessionStart": [
+    "PreToolUse": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
-            "args": [
-              "-hook",
-              "SessionStart"
-            ],
-            "async": true,
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
-              "SessionStart"
-            ],
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
-            "args": [
-              "-hook",
-              "UserPromptSubmit"
-            ],
-            "async": true,
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
-            "args": [
-              "UserPromptSubmit"
-            ],
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
-            "args": [
-              "-hook",
-              "Notification"
-            ],
-            "async": true,
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
-            "args": [
-              "Notification"
+              "PreToolUse"
             ],
             "timeout": 5
           }
@@ -130,7 +79,21 @@
         ]
       }
     ],
-    "Stop": [
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PostToolBatch"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
       {
         "hooks": [
           {
@@ -138,7 +101,7 @@
             "command": "/Users/aayushkedawat/bin/traffic-light-hook",
             "args": [
               "-hook",
-              "Stop"
+              "Notification"
             ],
             "async": true,
             "timeout": 5
@@ -147,7 +110,69 @@
             "type": "command",
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
-              "Stop"
+              "Notification"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "UserPromptSubmit"
+            ],
+            "async": true,
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "UserPromptSubmit"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "UserPromptExpansion"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
+            "args": [
+              "-hook",
+              "SessionStart"
+            ],
+            "async": true,
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "SessionStart"
             ],
             "timeout": 5
           }
@@ -178,42 +203,24 @@
         ]
       }
     ],
-    "PreToolUse": [
+    "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "command": "/Users/aayushkedawat/bin/traffic-light-hook",
             "args": [
-              "PreToolUse"
+              "-hook",
+              "Stop"
             ],
+            "async": true,
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
-              "PermissionRequest"
-            ],
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionDenied": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
-            "args": [
-              "PermissionDenied"
+              "Stop"
             ],
             "timeout": 5
           }
@@ -256,6 +263,160 @@
             "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
             "args": [
               "SubagentStop"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PreCompact"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PostCompact"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PreModelSwitch"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostModelSwitch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PostModelSwitch"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PermissionRequest"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "PermissionDenied"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "Elicitation"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "ElicitationResult": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "ElicitationResult"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "MessageDisplay"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "TaskCreated"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/aayushkedawat/Downloads/Projects/traffic-lights/tools/capture/capture-hook.sh",
+            "args": [
+              "TaskCompleted"
             ],
             "timeout": 5
           }
