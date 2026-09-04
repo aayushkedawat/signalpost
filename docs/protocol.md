@@ -338,13 +338,40 @@ better basis for task identity than inference if that is ever needed.
 > `SubagentStop` is also left unmapped — a subagent finishing says
 > nothing about the main agent, which is usually still working.
 
-A bare permission denial — tapping "No" without typing a reason — emits
-nothing at all: no `PermissionDenied`, no `PostToolUse`, no `Stop`. The
-session therefore stays WAITING until the next `UserPromptSubmit`, which
-is defensible, since after a rejection the agent genuinely is awaiting
-direction. Note that §9 aggregation lets one such session pin the global
-light red and mask every other tool until that session is touched or
-quit.
+**Denial emits nothing**, confirmed across five identical captured
+denials. Tapping "No" shows "tool interrupted" in Claude Code and fires
+no hook whatsoever — not `PermissionDenied`, not `PostToolUseFailure`,
+not `Stop`. The next event is the user's own next `UserPromptSubmit`,
+which may be seconds or minutes later:
+
+```
+PreToolUse Write -> PermissionRequest -> Notification permission_prompt
+                                         ...nothing...
+UserPromptSubmit                         (+30s, when the user next typed)
+```
+
+So the light stays red from the moment the prompt is answered until the
+user types again. Two consequences:
+
+- Notably, **no `Stop` fires either**, so the turn is aborted rather than
+  completed. From Claude Code's point of view the turn is still open and
+  awaiting the user, which is an argument that WAITING is *correct* here.
+  It does not feel correct to a user who has just answered.
+- §9 aggregation lets one such session pin the global light red and mask
+  every other tool until that session is touched or quit.
+
+**Approval has the same shape and is worse.** Nothing fires when a prompt
+is approved either: the next event is `PostToolUse`, which arrives when
+the approved command *finishes*. Captured turns show red persisting 13s
+and 262s while the agent worked on exactly what the user had authorised.
+
+There is currently no known hook that fires at the moment a permission
+prompt is answered, either way. `PostToolUseFailure` carries an
+`is_interrupt` field that would be the natural discriminator, but it has
+only ever been observed as `false` on genuine command failures and does
+not fire on a denial at all. If no such hook exists, this is a limit of
+the hook surface rather than of this mapping, and worth reporting
+upstream.
 
 Still unobserved: `StopFailure` and `PermissionDenied`. The latter is
 suspected to cover rule-based denials rather than user rejections.
